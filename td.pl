@@ -1,4 +1,4 @@
-### td
+#!/usr/bin/perl
 
 use strict;
 use warnings;
@@ -6,48 +6,96 @@ use diagnostics;
 
 use Cwd qw{ abs_path };
 use File::Basename qw{ dirname };
-use Switch;
-use DateTime;
-use Text::Wrap;
 
+
+our $_ENV        = '';
+our $_PATH       = '';
+our $_DIR        = '';
+our $_VERSION    = '';
+
+##
+# TODO: Make folder on install
+##
+our $_TABLE_PATH = $ENV{'HOME'}.'/.td/project_table.txt';
+
+##
+# TODO: Add or die to file pipes
+# TODO: Add priorities ?
+# TODO: Add command to fix project_table non-existing entries
+# TODO: Doesn't accept folder names with spaces
+##
+
+##
+# stty is part of the coreutils package ####
+##
+our($_LINES, $_COLS) = `stty size` =~ /(\d+) (\d+)/;
 
 $| = -1;
 
 
-sub current_path   { return dirname( abs_path($0) ); }
-sub current_folder { return ( split( /\\/, current_path() ) )[-1]; }
-sub date           { return DateTime->now(); }
+sub current_path       { return dirname( abs_path($0) ); }
+sub current_dir        { return ( split( /\\/, current_path() ) )[-1] }
+sub current_dir_cygwin { return ( split(/\//, $_[0]) )[-1];           }
 
-sub add_to_table
+##
+# TODO: Get cygwin path
+##
+sub win_path
     {
-        my($path, $name) = @_;
+        my($path) = @_;
         
-        open(TABLE, '<', './project_table.txt');
-            my @table = <TABLE>;
-            chomp(@table);
-        close(TABLE);
-            
-        push(@table, "$path $name");
+        $path = substr($path, 1);
+        $path =~ s/\\/\//;
         
-        open(TABLE, '>', './project_table.txt');
-            print TABLE join("\n", @table);
-        close(TABLE);
-        
-        return 1;
+        return 'C:/cygwin64/'.$path;
     }
 
-sub remove_from_table
+sub date
     {
-        my($curr_path, $curr_folder) = @_;
-        my $path;
+        my($s, $min, $h, $d, $m, $y) = localtime(time());
         
+        for($s, $min, $h, $d, $m) { $_ = "0$_" if length $_ == 1; }
         
-        open(TABLE, '<', './project_table.txt');
+        $m++;
+        $y += 1900;
+        
+        return "$d/$m/$y $h:$min:$s";
+    }
+
+sub get_table
+    {
+        open(TABLE, '<', $_TABLE_PATH);
             my @table = <TABLE>;
             my $len   = scalar @table;
             
             chomp @table;
         close(TABLE);
+        
+        return @table;
+    }
+
+sub add_to_table
+    {
+        my($path, $name) = @_;
+        
+        
+        my @table = get_table();
+            
+        push(@table, "$path $name");
+        
+        open(TABLE, '>', $_TABLE_PATH);
+            print TABLE join("\n", @table);
+        close(TABLE);
+    }
+
+sub remove_from_table
+    {
+        my($curr_path, $curr_dir) = @_;
+        my $path;
+        
+        
+        my @table = get_table();
+        my $len   = scalar @table;
         
         return undef if $len == 0;
         
@@ -75,37 +123,46 @@ sub remove_from_table
         return undef;
     }
 
-sub get_n
+sub get_data
     {
-        my $folder = current_folder();
-    
-        open(DATA, '<', "./projects/$folder/data.txt");
+        my($attr) = @_;
+
+        open(DATA, '<', "./.td/data.txt");
             for my $line (<DATA>)
                 {
-                    if( $line =~ /n=(\d+)/ ) { return $1; }
+                    if( $line =~ /$attr=(.+)\n/ )
+                        {
+                            close(DATA);
+                            
+                            return $1;
+                        }
                 }
         close(DATA);
         
         return undef;
     }
 
-sub set_n
+sub set_data
     {
-        my($n)     = @_;
-        my $folder = current_folder();
+        my($attr, $val) = @_;
         
-        open(DATA, '<', "./projects/$folder/data.txt");
+        open(DATA, '<', "./.td/data.txt");
             my @data = <DATA>;
+            my $len  = scalar @data;
+            
             chomp @data;
         close(DATA);
-
-        for my $i(0...scalar @data)
+        
+        die if $len == 0; ####
+        
+        
+        for my $i (0...$len)
             {
-                if( $data[$i] =~ /n=(\d+)/ )
+                if( $data[$i] =~ /$attr=/ )
                     {
-                        $data[$i] = "n=$n";
+                        $data[$i] = "$attr=$val";
                         
-                        open(DATA, '>', "./projects/$folder/data.txt");
+                        open(DATA, '>', "./.td/data.txt");
                             print DATA join("\n", @data);
                         close(DATA);
                         
@@ -116,56 +173,75 @@ sub set_n
         return undef;
     }
 
-sub get_version
+sub get_entry_attr
     {
-        my $folder = current_folder();
-    
-        open(DATA, '<', "./projects/$folder/data.txt");
-            for my $line (<DATA>)
-                {
-                    if( $line =~ /version=(.+)\n/ ) { return $1; }
-                }
-        close(DATA);
+        my($line) = @_;
+        my($n, $tag, $status, $version, $date, $entry) = $line =~ /n=(\d+) t=(.+?) s=(.+?) v=(.+?) d=(.+?) e=(.+)/;
         
-        return undef;
+        return ($n, $tag, $status, $version, $date, $entry);
     }
 
-sub set_version
+sub set_entry_attr
     {
-        ...
+        my($n, $attr, $val) = @_;
+        my $found = undef;
+        my %attr = ();
+        
+        open(TODO, '<', "./.td/todo.txt");
+            my @todo = <TODO>;
+            chomp @todo;
+        close(TODO);
+        
+        
+        for my $i (0...scalar @todo)
+            {
+                if( ( split(' ', $todo[$i]) )[0] eq "n=$n" )
+                    {
+                        @attr{'n', 't', 's', 'v', 'd', 'e'} = get_entry_attr($todo[$i]);
+                        $attr{$attr} = $val;
+                        
+                        $todo[$i] = "n=".$attr{'n'}." t=".$attr{'t'}." s=".$attr{'s'}." v=".$attr{'v'}." "
+                                  . "d=".$attr{'d'}." e=".$attr{'e'};
+                        
+                        $found = 1;
+                        last;
+                    }
+            }
+        
+        
+        open(TODO, '>', "./.td/todo.txt");
+            print TODO "$_\n" foreach @todo;
+        close(TODO);
+        
+        
+        return $found;
     }
 
 sub add_entry
     {
         my($tag, $entry) = @_;
         
-        my $folder = current_folder();
+        my $dir = $_DIR;
         
-        my $n       = get_n()+1;
+        my $n       = get_data('n')+1;
         my $date    = date();
         my $status  = 'yet';
-        my $version = get_version();
+        my $version = get_data('version');
         
         
-        open(TODO, '>>', "./projects/$folder/todo.txt");
+        open(TODO, '>>', "./.td/todo.txt");
             print TODO "n=$n t=$tag s=$status v=$version d=$date e=$entry\n";
         close(TODO);
         
         
-        set_n($n);
+        set_data('n', $n);
     }
 
 sub remove_entry
     {
         my($n) = @_;
         
-        my $folder = current_folder();
-        
-        
-        ##
-        # TODO: Add no arguments handler to process_arguments
-        ##
-        open(TODO, '<', "./projects/$folder/todo.txt");
+        open(TODO, '<', "./.td/todo.txt");
             my @todo = <TODO>;
             my $len  = scalar @todo;
             
@@ -181,8 +257,8 @@ sub remove_entry
                     {
                         splice(@todo, $i, 1);
                         
-                        open(TODO, '>', "./projects/$folder/todo.txt");
-                            print TODO join("\n", @todo);
+                        open(TODO, '>', "./.td/todo.txt");
+                            print TODO "$_\n" foreach @todo;
                         close(TODO);
                         
                         return 1;
@@ -192,20 +268,33 @@ sub remove_entry
         return undef;
     }
 
-sub show_all_entries
+sub print_entries
     {
         ##
         # So that it doesn't throw a warning on a hash of array of hashes
         ##
         no warnings "experimental::autoderef";
         
-        my($folder, $status) = @_;
+        if( !-e "./.td/todo.txt")
+            {
+                print "td: There is not a td project in this folder. Have a look at td help.\n";
+                print "\nMaybe you meant td init?\n\n";
+                
+                return undef;
+            }
         
-        my %tags  = ();
-        my $n_len = length(get_n());
+        
+        my($hashref, $path) = @_;
+        my %filter = %{$hashref};
+        
+        $path ||= '.';
+        
+        my %entry    = ();
+        my %tags     = ();
+        my %attr_len = ( n => 0, s => 0, v => 0, d => 0, e => 0 );
         
         
-        open(TODO, '<', "./projects/$folder/todo.txt");
+        open(TODO, '<', $path."/.td/todo.txt");
             my @todo = <TODO>;
             chomp @todo;
         close(TODO);
@@ -214,20 +303,48 @@ sub show_all_entries
         ##
         # Get entries
         ##
+        ENTRY:
         for(my $i = 0; $i < scalar @todo; $i++)
             {
-                my($n, $tag, $status, $version, $date, $entry) = $todo[$i] =~ /n=(\d+) t=(.+?) s=(.+?) v=(.+?) d=(.+?) e=(.+)/;
+                my($n, $tag, $status, $version, $date, $entry) = get_entry_attr( $todo[$i] );
                 
-                ##
+                
+                %entry = ( n => $n, s => $status, v => $version, d => $date, e => $entry );
+                
+                for my $key (keys %filter)
+                    {
+                        if($key =~ /e|entry/)
+                            {
+                                my $entry = $filter{$key};
+                                next ENTRY if $entry{$key} !~ /$entry/;
+                            }
+                        elsif($key =~ /t|tag/)
+                            {
+                                next ENTRY if $filter{$key} ne $tag;
+                            }
+                        elsif( defined $entry{$key} and $entry{$key} ne $filter{$key} )
+                            {
+                                next ENTRY;
+                            }
+                    }
+                
+                
+                $attr_len{'n'} = length($n)       if length($n)       > $attr_len{'n'};
+                $attr_len{'v'} = length($version) if length($version) > $attr_len{'v'};
+                $attr_len{'d'} = length($date)    if length($date)    > $attr_len{'d'}; ####
+                $attr_len{'e'} = length($entry)   if length($entry)   > $attr_len{'e'};
+                
+                
                 # Initialize tag
-                ##
                 $tags{$tag} ||= [];
                 
-                #push( $tags{$tag}, { n => $n, status => $status, version => $version, date => $date, entry => $entry } );
-                push( $tags{$tag}, [$n, $status, $version, $date, $entry] );
+                push( @{$tags{$tag}}, {%entry});
             }
         
         
+        # tag hash
+        #   -> entries array
+        #       -> entry hash
         for my $tag (sort keys %tags)
             {
                 print "\n\n";
@@ -236,38 +353,51 @@ sub show_all_entries
                 
                 for my $tag_arr ( $tags{$tag} )
                     {
-                        for my $entry ( @{ $tags{$tag} } )
+                        my @tag_arr = @{$tag_arr};
+                        
+                        for my $entry ( @tag_arr )
                             {
-                                my @entry = @{$entry};
-                                my($n, $status, $version, $date, $entry) = @entry;
+                                %entry = %{$entry};
                                 
-                                continue if $status eq 'done';
+                                #$entry{'d'} =~ s/T/ /;
+                                #$entry{'d'} =~ s/-/\//g;
+                                $entry{'n'} = " [" . ( ' ' x ( $attr_len{'n'}-length( $entry{'n'} ) + 1 ) ) . $entry{'n'}." ]";
+                                
+                                $entry{'e'} .= ' ' x ( $attr_len{'e'} - length($entry{'e'}) );
                                 
                                 
-                                $date =~ s/T/ /;
+                                my $line = $entry{'n'}."  ".$entry{'e'};
                                 
-                                $n = " [" . ( ' ' x ( $n_len-length($n) + 1 ) ) . "$n ]";
+                                $line .= ' ' x ($_COLS - length($line) - length( 'v'.$entry{'v'}." at ".$entry{'d'}) - 4);
+                                $line .= 'v'.$entry{'v'}." at ".$entry{'d'};
                                 
-                                my $line = "$n  $entry\t\t$version @ $date";
-                                
-                                #print $line, "\n";
-                                my @a = ($n, $entry, $version, $date, "\n");
-                                print Text::Wrap::fill("\t", "", @a);
+                                print $line, "\n";
                             }
                     }
             }
+        
+        print "\n";
     }
 
-sub init_data
+sub init_files
     {
-        my($folder, $version) = @_;
+        my($name, $version) = @_;
     
         my $n    = 0;
         my $date = date();
         
-        open(DATA, '>', "./projects/$folder/data.txt");
-            print DATA "n=$n\n", "version=$version\n", "init_date=$date";
+        if(!-e './.td')
+            {
+                print 'td: There is no projects folder.';
+                return;
+            }
+        
+        open(DATA, '>', "./.td/data.txt");
+            print DATA "name=$name\n", "n=$n\n", "version=$version\n", "init_date=$date";
         close(DATA);
+        
+        open(TODO, '>', "./.td/todo.txt");
+        close(TODO);
     }
 
 ##
@@ -282,15 +412,13 @@ sub init
         ##
         # Get initial values
         ##
-        my $path   = current_path();
-        my $folder = current_folder();
         my $init_version = '0.1.0';
         
         
         ##
         # Initialize td with user input
         ##
-        print "Project name($folder): ";
+        print "Project name($_DIR): ";
         $name = <STDIN>;
         
         print "Initial version($init_version): ";
@@ -301,7 +429,7 @@ sub init
         # Set to default values if user pressed enter
         ##
         $name eq "\n"
-            ? $name = $folder
+            ? $name = $_DIR
             : chomp $name;
         $version eq "\n"
             ? $version = $init_version
@@ -312,16 +440,16 @@ sub init
         # Add to project table and create folder
         # TODO: Under current implementation, there can only be one project with one name
         ##
-        if( -e "./projects/$name" )
+        if( -e "./.td" )
             {
                 print "td: Cannot create project $name - It already exists.\n";
             }
         else
             {
-                add_to_table($path, $name);
+                add_to_table($_PATH, $name);
                     
-                mkdir "./projects/$name";
-                init_data($folder, $version);
+                mkdir "./.td";
+                init_files($name, $version);
                 
                 print "td: Project $name initializated.\n";
             }
@@ -329,30 +457,40 @@ sub init
 
 sub _close
     {
-        my $curr_path   = current_path();
-        my $curr_folder = current_folder();
+        if(!-e './.td')
+            {
+                print "td: There isn't a td project in this folder.\n";
+                return;
+            }
+    
+    
+        ##
+        # Ask the user for confirmation before closing
+        ##
+        print 'Confirm(N): ';
         
+        my $yn = <STDIN>;
+        chomp $yn;
         
-        my $success = remove_from_table($curr_path, $curr_folder);
+        if($yn !~ /^[yY]$/) { print "\ntd: Operation cancelled.\n"; return; }
         
         
         ##
         # If there has been a match, remove project folder
-        # TODO: Probably won't be able to remove non-empty folders
-        # TODO: Add some security check on $curr_folder to avoid unintended deletions
         ##
+        my $success = remove_from_table($_PATH); ####
+        
         if($success)
             {
-                if($curr_folder eq '') { return; }
+                my $name = get_data('name');
             
-                system("rm -rf ./projects/$curr_folder");
-                rmdir "./projects/$curr_folder";
+                system("rm -rf ./.td");
                 
-                print "td: Project $curr_folder closed.";
+                print "\ntd: Project $name closed.\n";
             }
         else
             {
-                print "td: There isn't a td project in this folder.\n";
+                print "td: Couldn't close project.\n";
             }
     }
 
@@ -360,79 +498,214 @@ sub add
     {
         my($entry, $tag) = split(' -t ', join(' ', @_));
         
-        $tag ||= 'TODO';
+        com_help('add') if not defined $entry;
         
-        add_entry($tag, $entry);
         
-        show_all_entries( current_folder(), 'yet' );
+        add_entry
+            (
+                $tag    || 'TODO',
+                $entry
+            );
+        
+       print_entries({ s => 'yet' });
     }
-sub mv
-    {
-    }
+
 sub rm
     {
         my($n) = @_;
         
+        
         my $success = remove_entry($n);
         
-        if($success)
-            {
-                show_all_entries( current_folder(), 'yet' );
-            }
-        else
-            {
-                print "td: There is no such entry with that number.\n";
-            }
+        if($success) { print_entries({ s => 'yet' }); }
+        else         { print "td: There is no such entry with that number.\n"; }
     }
+
 sub done
     {
+        my($n) = @_;
+        
+        if(not defined $n) { print_entries({ s => 'done' });  }
+        else               { set_entry_attr($n, 's', 'done'); }
     }
-sub active
+
+##
+# TODO: Only accepts one argument
+##
+sub filter
     {
+        my @args = @_;
+        
+        my $attr = ($args[0] eq 'version' or $args[0] eq 'v') ? 'v' :
+                   ($args[0] eq 'number'  or $args[0] eq 'n') ? 'n' :
+                   ($args[0] eq 'tag'     or $args[0] eq 't') ? 't' :
+                   ($args[0] eq 'status'  or $args[0] eq 's') ? 's' :
+                                                                'e';
+        
+        if($attr eq 'e') { print_entries({ 'e'   => $args[0] }); }
+        else             { print_entries({ $attr => $args[1] }); }
     }
-sub show
+
+sub set
     {
+        my(@args) = @_;
+        
+        if($args[0] =~ /^\d+$/) { set_entry_attr(@args); } # $n, $attr, $val
+        else                    { set_data(@args);       } # $attr, $val
     }
+
+sub list
+    {
+        my(@args) = @_;
+        
+        
+        my @table = get_table();
+        
+        for my $line (@table)
+            {
+                my($path, $name) = $line =~ /(.+?) (.+)/;
+                
+                if(defined $args[0])
+                    {
+                        if($args[0] eq 'all')
+                            {
+                                print "\n $name: $path\n";
+                                print_entries( { s => 'yet' }, win_path($path) );
+                            }
+                        elsif( $name eq $args[0] )
+                            {
+                                print "\n $name: $path\n";
+                                print_entries( { s => 'yet' }, win_path($path) );
+                            }
+                    }
+                else
+                    {
+                        print "\n$name: $path";
+                    }
+            }
+        
+        print "\n";
+    }
+
 sub not_valid
     {
         my($com) = @_;
         
-        print "td: $com is not a valid command.\n";
+        print "td: $com is not a valid command.\n\n";
+        
+        print_help();
+    }
+
+sub print_help
+    {
+print <<"END"
+usage: td [init|i] [close|c] [add|a <entry> (-t tag)] [rm <entry n>]
+          [done|d (entry n)] [set|s (entry n) <attr> <val>]
+          [filter|f <attr> <val>] [list|l (all|<name>)] [help|h]
+
+
+    init    - Initializes td project.
+    
+    close   - Closes td project.
+    
+    add     - Adds entry to todo.txt.
+              
+              Example: td add abcd | td add abcd -t TEST
+    
+    rm      - Removes entry from todo.txt
+    
+              Example: td rm 10
+    
+    done    - Either shows all entries marked as down or set an entry done (being a special case of td set <n> s done)
+    
+              Example: td done | td done 10
+    
+    set     - Sets an entry attribute (if an entry n is provided) or a global variable.
+    
+              Example: td set version 0.1.1 | td set 10 tag TEST
+    
+    filter  - Filter results by entry with one arguments or by attribute with two.
+    
+              Example: td filter test | td filter version 0.1.0
+    
+    list    - List all or some opened td projects
+              
+              Example: td list all | td list abcd
+    
+    help    - Shows this help
+    
+    all     - Not implemented
+
+END
+;
+exit();
+    }
+
+sub com_help
+    {
+        my($com) = @_;
+
+        print $com eq 'init'   ? "td: Usage - td init\n"                                                :
+              $com eq 'close'  ? "td: Usage - td close\n"                                               :
+              $com eq 'add'    ? "td: Usage - td add <entry> [-t tag]\n"                                :
+              $com eq 'rm'     ? "td: Usage - td rm <entry>\n"                                          :
+              $com eq 'done'   ? "td: Usage - td done [<entry>]\n"                                      :
+              $com eq 'set'    ? "td: Usage - td set [n] <attr> <val>\n"                                :
+              $com eq 'filter' ? "td: Usage - td filter [v|version|n|number|t|tag|s|status] <match>\n"  :
+              $com eq 'list'   ? "td: Usage - td list [all] [<name>]\n"                                 :
+              $com eq 'help'   ? "td: Usage - td help [-t <tag>]\n"                                     :
+              $com eq 'all'    ? "td: Usage - td all\n"                                                 :
+                                 "Error.";
+        
         exit();
     }
 
-
-##
-# TODO: Entry edditing command
-##
 sub process_arguments
     {
         my $com = splice(@ARGV, 0, 1);
         my @args = @ARGV;
         
         
-        if(scalar @args == 0)
+        ($com eq 'init'   or $com eq 'i')   ?    init       (@args)     :
+        ($com eq 'close'  or $com eq 'c')   ?    _close     (@args)     :
+        ($com eq 'add'    or $com eq 'a')   ?    add        (@args)     :
+        ($com eq 'rm')                      ?    rm         (@args)     :
+        ($com eq 'done'   or $com eq 'd')   ?    done       (@args)     :
+        ($com eq 'set'    or $com eq 's')   ?    set        (@args)     :
+        ($com eq 'filter' or $com eq 'f')   ?    filter     (@args)     :
+        ($com eq 'list'   or $com eq 'l')   ?    list       (@args)     :
+        ($com eq 'help'   or $com eq 'h')   ?    print_help (@args)     :
+        ($com eq 'all'    or $com eq 'a')   ?    'Not implemented.'     :
+                                                 not_valid($com);
+    }
+
+
+##
+# Set environment and current directory constants
+# In cygwin, ARGV[0] is -cygwin and ARGV[1] is the file's path
+##
+if(scalar @ARGV > 0)
+    {
+        if($ARGV[0] eq '-cygwin')
             {
-                show_all_entries( current_folder(), 'yet' );
-                return;
+                $_ENV  = 'cygwin';
+                $_PATH = $ARGV[1];
+                $_DIR  = current_dir_cygwin($_PATH);
+                
+                splice(@ARGV, 0, 2);
             }
-        
-        switch($com)
+        else
             {
-                case 'init'     { init   (@ARGV);  }
-                case 'close'    { _close (@ARGV);  }
-                case 'add'      { add    (@ARGV);  }
-                case 'mv'       { mv     (@ARGV);  }
-                case 'rm'       { rm     (@ARGV);  }
-                case 'done'     { done   (@ARGV);  }
-                case 'active'   { active (@ARGV);  }
-                case 'show'     { show   (@ARGV);  }
-                case 'up'       { ...              }
-                case 'down'     { ...              }
-                case 'v'        { ...              }
-                case 'checkout' { ...              }
-                else            { not_valid($com); }
+                $_ENV  = 'linux';
+                $_PATH = current_path();
+                $_DIR  = current_dir();
             }
+    }
+
+if(scalar @ARGV == 0)
+    {
+        print_entries({ s => 'yet' });
+        exit();
     }
 
 
