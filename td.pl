@@ -8,10 +8,11 @@ use Cwd qw{ abs_path };
 use File::Basename qw{ dirname };
 
 
-our $_ENV        = '';
-our $_PATH       = '';
-our $_DIR        = '';
-our $_VERSION    = '';
+our $_ENV         = '';
+our $_PATH        = '';
+our $_DIR         = '';
+our $_VERSION     = '';
+our $_CYGWIN_PATH = 'C:/cygwin64/';
 
 ##
 # TODO: Make folder on install
@@ -33,13 +34,22 @@ our($_LINES, $_COLS) = `stty size` =~ /(\d+) (\d+)/;
 $| = -1;
 
 
+#--------------------
+# Utility functions
+#--------------------
 sub current_path       { return dirname( abs_path($0) ); }
 sub current_dir        { return ( split( /\\/, current_path() ) )[-1] }
 sub current_dir_cygwin { return ( split(/\//, $_[0]) )[-1];           }
 
-##
-# TODO: Get cygwin path
-##
+
+#-----------------------------------------------------
+# Name        : win_path
+# Description : Convert linux path into windows path
+# Takes       : path (string) - Linux path
+# Returns     : (string) - Windows path
+# Notes       : Nothing
+# TODO        : Get system cygwin path
+#-----------------------------------------------------
 sub win_path
     {
         my($path) = @_;
@@ -47,9 +57,17 @@ sub win_path
         $path = substr($path, 1);
         $path =~ s/\\/\//;
         
-        return 'C:/cygwin64/'.$path;
+        return $_CYGWIN_PATH.$path;
     }
 
+#---------------------------------------------
+# Name        : date
+# Description : Return formatted date
+# Takes       : Nothing
+# Returns     : (string) - dd/mm/yy hh:mm:ss
+# Notes       : Nothing
+# TODO        : Nothing
+#---------------------------------------------
 sub date
     {
         my($s, $min, $h, $d, $m, $y) = localtime(time());
@@ -62,6 +80,14 @@ sub date
         return "$d/$m/$y $h:$min:$s";
     }
 
+#----------------------------------------------
+# Name        : get_table
+# Description : Read table of td projects
+# Takes       : Nothing
+# Returns     : table (array) - Project table
+# Notes       : Nothing
+# TODO        : Nothing
+#----------------------------------------------
 sub get_table
     {
         open(TABLE, '<', $_TABLE_PATH);
@@ -74,6 +100,15 @@ sub get_table
         return @table;
     }
 
+#-----------------------------------------------
+# Name        : add_to_table
+# Description : Add project to project table
+# Takes       : path (string) - Project's path
+#               name (string) - Project's name
+# Returns     : Nothing
+# Notes       : Nothing
+# TODO        : Add always windows path ?
+#-----------------------------------------------
 sub add_to_table
     {
         my($path, $name) = @_;
@@ -88,9 +123,18 @@ sub add_to_table
         close(TABLE);
     }
 
+#----------------------------------------------------
+# Name        : remove_from_table
+# Description : Remove project from project table
+# Takes       : curr_path (string) - Path to remove
+# Returns     : (true)  - On match
+#               (undef) - Otherwise
+# Notes       : Nothing
+# TODO        : Nothing
+#----------------------------------------------------
 sub remove_from_table
     {
-        my($curr_path, $curr_dir) = @_;
+        my($curr_path) = @_;
         my $path;
         
         
@@ -123,14 +167,23 @@ sub remove_from_table
         return undef;
     }
 
+#-------------------------------------------------
+# Name        : get_data
+# Description : Get data.txt variable
+# Takes       : var (string) - Variable to get
+# Returns     : (string) - Variable value
+#               (undef)  - If there was no match
+# Notes       : Nothing
+# TODO        : Nothing
+#-------------------------------------------------
 sub get_data
     {
-        my($attr) = @_;
+        my($var) = @_;
 
         open(DATA, '<', "./.td/data.txt");
             for my $line (<DATA>)
                 {
-                    if( $line =~ /$attr=(.+)\n/ )
+                    if( $line =~ /$var=(.+)\n/ )
                         {
                             close(DATA);
                             
@@ -142,9 +195,19 @@ sub get_data
         return undef;
     }
 
+#-------------------------------------------------
+# Name        : set_data
+# Description : Set data.txt variable
+# Takes       : var (string) - Variable to set
+#               val (string) - Value to set
+# Returns     : (string) - Variable data
+#               (undef)  - On failure
+# Notes       : Careful with die on len == 0
+# TODO        : Nothing
+#-------------------------------------------------
 sub set_data
     {
-        my($attr, $val) = @_;
+        my($var, $val) = @_;
         
         open(DATA, '<', "./.td/data.txt");
             my @data = <DATA>;
@@ -158,9 +221,9 @@ sub set_data
         
         for my $i (0...$len)
             {
-                if( $data[$i] =~ /$attr=/ )
+                if( $data[$i] =~ /$var=/ )
                     {
-                        $data[$i] = "$attr=$val";
+                        $data[$i] = "$var=$val";
                         
                         open(DATA, '>', "./.td/data.txt");
                             print DATA join("\n", @data);
@@ -173,6 +236,14 @@ sub set_data
         return undef;
     }
 
+#-------------------------------------------------
+# Name        : get_entry_attr
+# Description : Split entry string attributes
+# Takes       : line (string) - Entry
+# Returns     : (array) - Attributes
+# Notes       : Nothing
+# TODO        : Nothing
+#-------------------------------------------------
 sub get_entry_attr
     {
         my($line) = @_;
@@ -181,6 +252,17 @@ sub get_entry_attr
         return ($n, $tag, $status, $version, $date, $entry);
     }
 
+#-------------------------------------------------
+# Name        : set_entry_attr
+# Description : Set entry attribute
+# Takes       : n    (string) - Entry number
+#               attr (string) - Attribute to set
+#               val  (string) - Value to set
+# Returns     : (true)  - On success
+#               (undef) - On failure
+# Notes       : Nothing
+# TODO        : Nothing
+#-------------------------------------------------
 sub set_entry_attr
     {
         my($n, $attr, $val) = @_;
@@ -217,9 +299,18 @@ sub set_entry_attr
         return $found;
     }
 
+#----------------------------------------------
+# Name        : add_entry
+# Description : Add entry
+# Takes       : entry (string) - Entry to add
+#               tag   (string) - Tag to set
+# Returns     : Nothing
+# Notes       : Nothing
+# TODO        : Nothing
+#----------------------------------------------
 sub add_entry
     {
-        my($tag, $entry) = @_;
+        my($entry, $tag) = @_;
         
         my $dir = $_DIR;
         
@@ -237,6 +328,15 @@ sub add_entry
         set_data('n', $n);
     }
 
+#----------------------------------------------------
+# Name        : remove_entry
+# Description : Removes an entry
+# Takes       : n (string) - Entry number to remove
+# Returns     : (true)  - On success
+#               (undef) - On failure
+# Notes       : Nothing
+# TODO        : Nothing
+#----------------------------------------------------
 sub remove_entry
     {
         my($n) = @_;
@@ -268,11 +368,17 @@ sub remove_entry
         return undef;
     }
 
+#----------------------------------------------------------------------------
+# Name        : print_entries
+# Description : Format and print entries
+# Takes       : hashref (hashref) - Attributes to filter
+#               path    (string)  - Path to read (optional)
+# Returns     : Nothing
+# Notes       : No warnings to avoid a warning on a hash of array of hashes
+# TODO        : Nothing
+#----------------------------------------------------------------------------
 sub print_entries
     {
-        ##
-        # So that it doesn't throw a warning on a hash of array of hashes
-        ##
         no warnings "experimental::autoderef";
         
         if( !-e "./.td/todo.txt")
@@ -379,6 +485,15 @@ sub print_entries
         print "\n";
     }
 
+#---------------------------------------------------
+# Name        : init_files
+# Description : Initialize all files on init
+# Takes       : name    (string) - Project name
+#               version (string) - Project version
+# Returns     : Nothing
+# Notes       : Nothing
+# TODO        : Nothing
+#---------------------------------------------------
 sub init_files
     {
         my($name, $version) = @_;
@@ -400,12 +515,17 @@ sub init_files
         close(TODO);
     }
 
-##
-# TODO: Add description option?
-##
+#--------------------------------------------
+# Name        : init
+# Description : Initialize project
+# Takes       : Nothing
+# Returns     : Nothing
+# Notes       : Nothing
+# TODO        : Add description attribute ?
+#--------------------------------------------
 sub init
     {
-        my @args = @_;
+        #my @args = @_;
         my($name, $version);
         
         
@@ -455,6 +575,14 @@ sub init
             }
     }
 
+#------------------------------
+# Name        : _close
+# Description : Close project
+# Takes       : Nothing
+# Returns     : Nothing
+# Notes       : Nothing
+# TODO        : Nothing
+#------------------------------
 sub _close
     {
         if(!-e './.td')
@@ -494,6 +622,15 @@ sub _close
             }
     }
 
+#-------------------------------------------------------
+# Name        : add
+# Description : Add entry
+# Takes       : entry (string) - Entry to add
+#               tag   (string) - Tag to set (optional)
+# Returns     : Nothing
+# Notes       : Nothing
+# TODO        : Nothing
+#-------------------------------------------------------
 sub add
     {
         my($entry, $tag) = split(' -t ', join(' ', @_));
@@ -503,13 +640,21 @@ sub add
         
         add_entry
             (
-                $tag    || 'TODO',
-                $entry
+                $entry,
+                $tag    || 'TODO'
             );
         
        print_entries({ s => 'yet' });
     }
 
+#------------------------------------------
+# Name        : rm
+# Description : Remove entry
+# Takes       : n (string) - Entry number
+# Returns     : Nothing
+# Notes       : Nothing
+# TODO        : Nothing
+#------------------------------------------
 sub rm
     {
         my($n) = @_;
@@ -521,6 +666,14 @@ sub rm
         else         { print "td: There is no such entry with that number.\n"; }
     }
 
+#-----------------------------------------------------------
+# Name        : done
+# Description : Set an entry as done or print done entries
+# Takes       : n (string) - Entry number (optional)
+# Returns     : Nothing
+# Notes       : Nothing
+# TODO        : Nothing
+#-----------------------------------------------------------
 sub done
     {
         my($n) = @_;
@@ -529,9 +682,14 @@ sub done
         else               { set_entry_attr($n, 's', 'done'); }
     }
 
-##
-# TODO: Only accepts one argument
-##
+#------------------------------------------------------------------------
+# Name        : filter
+# Description : Filter entries by attributes
+# Takes       : args (array) - Attribute-Value pairs
+# Returns     : Nothing
+# Notes       : If there are no arguments, it filters by entry content
+# TODO        : Modify to accept multiple attributes
+#------------------------------------------------------------------------
 sub filter
     {
         my @args = @_;
@@ -546,6 +704,14 @@ sub filter
         else             { print_entries({ $attr => $args[1] }); }
     }
 
+#--------------------------------------------------------------------
+# Name        : set
+# Description : Set data or entry attributes
+# Takes       : args (array) - Either (n, attr, val) or (attr, val)
+# Returns     : Nothing
+# Notes       : Nothing
+# TODO        : Nothing
+#--------------------------------------------------------------------
 sub set
     {
         my(@args) = @_;
@@ -554,6 +720,14 @@ sub set
         else                    { set_data(@args);       } # $attr, $val
     }
 
+#-------------------------------------------------------------------------
+# Name        : list
+# Description : List td projects
+# Takes       : args (array) - Either 'all' or a project name (optional)
+# Returns     : Nothing
+# Notes       : Nothing
+# TODO        : Nothing
+#-------------------------------------------------------------------------
 sub list
     {
         my(@args) = @_;
@@ -587,6 +761,14 @@ sub list
         print "\n";
     }
 
+#-------------------------------------------
+# Name        : not_valid
+# Description : Handle non-valid arguments
+# Takes       : com (string) - Command
+# Returns     : Nothing
+# Notes       : Nothing
+# TODO        : Nothing
+#-------------------------------------------
 sub not_valid
     {
         my($com) = @_;
@@ -596,6 +778,14 @@ sub not_valid
         print_help();
     }
 
+#---------------------------------
+# Name        : print_help
+# Description : Prints the help
+# Takes       : Nothing
+# Returns     : Nothing
+# Notes       : Exits at the end
+# TODO        : Nothing
+#---------------------------------
 sub print_help
     {
 print <<"END"
@@ -641,6 +831,14 @@ END
 exit();
     }
 
+#---------------------------------------
+# Name        : com_help
+# Description : Prints command help
+# Takes       : com (string) - Command
+# Returns     : Nothing
+# Notes       : Exits at the end
+# TODO        : Nothing
+#---------------------------------------
 sub com_help
     {
         my($com) = @_;
@@ -660,6 +858,14 @@ sub com_help
         exit();
     }
 
+#-------------------------------------------------
+# Name        : process_arguments
+# Description : Process command line arguments
+# Takes       : Nothing
+# Returns     : Nothing
+# Notes       : Nothing
+# TODO        : Nothing
+#-------------------------------------------------
 sub process_arguments
     {
         my $com = splice(@ARGV, 0, 1);
