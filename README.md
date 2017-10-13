@@ -1,6 +1,8 @@
 Simple cygwin tool for feature and bug tracking.
 
-usage: td [init] [close] [add <entry> (-t <tag>) (-to <name>) ] [rm <entry n>]
+# Usage
+
+td [init] [close] [add <entry> (-t <tag>) (-to <name>) ] [rm <entry n>]
           [done (-n <entry n>)] [set (-n <entry n>) <attr> <val>]
           [filter <attr> <val>] [list (-all|-name <name>)] [help]
 
