@@ -1,4 +1,8 @@
+# td
+
 Simple cygwin tool for feature and bug tracking.
+
+![screenshot](./screenshot.png)
 
 
 # Usage
