@@ -51,3 +51,12 @@ Simple cygwin tool for feature and bug tracking.
 
     version
         Show current version
+
+# Author
+Alvaro Fernandez (nishinishi9999)
+
+# License
+GNU General License (GPL) 3.0 - https://www.gnu.org/licenses/gpl-3.0.en.html
+
+# Contact mail
+nishinishi9999 at gmail dot com
