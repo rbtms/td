@@ -2,7 +2,7 @@
 
 Simple cygwin tool for feature and bug tracking.
 
-![screenshot](./screenshot.png)
+![screenshot](https://user-images.githubusercontent.com/14959143/31885444-d2757d08-b7f0-11e7-943a-90db3380c56d.png)
 
 
 # Usage
